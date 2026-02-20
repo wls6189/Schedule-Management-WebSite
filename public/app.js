@@ -1,4 +1,5 @@
-const API_URL = 'http://localhost:3000/api';
+// 현재 호스트를 자동으로 감지하여 API URL 설정
+const API_URL = `${window.location.origin}/api`;
 
 let currentUser = null;
 
@@ -49,7 +50,7 @@ loginBtn.addEventListener('click', async () => {
         console.error('로그인 오류:', error);
         let errorMsg = '로그인 중 오류가 발생했습니다.';
         if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError')) {
-            errorMsg = '서버에 연결할 수 없습니다. 서버가 실행 중인지 확인하세요.\n\n터미널에서 "npm start" 명령어를 실행하세요.';
+            errorMsg = '서버에 연결할 수 없습니다.\n\n잠시 후 다시 시도해주세요.\n(Render 무료 플랜의 경우 첫 접속 시 약 30초~1분 정도 소요될 수 있습니다)';
         } else {
             errorMsg = `오류: ${error.message}`;
         }
