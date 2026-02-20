@@ -34,6 +34,13 @@ header h1 {
     text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.2);
 }
 
+.header-note {
+    margin-top: 15px;
+    font-size: 0.9em;
+    opacity: 0.9;
+    font-weight: 500;
+}
+
 .user-section {
     display: flex;
     gap: 10px;
