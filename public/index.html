@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>스케줄 관리 웹사이트</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>📅 스케줄 관리 시스템</h1>
+            <div class="user-section">
+                <input type="text" id="usernameInput" placeholder="사용자 이름 입력" maxlength="20">
+                <button id="loginBtn">로그인</button>
+                <div id="currentUser" class="current-user"></div>
+            </div>
+        </header>
+
+        <main>
+            <div class="schedule-form-section">
+                <h2>새 스케줄 추가</h2>
+                <form id="scheduleForm">
+                    <div class="form-group">
+                        <label for="daySelect">요일 선택:</label>
+                        <select id="daySelect" required>
+                            <option value="">요일을 선택하세요</option>
+                            <option value="월">월요일</option>
+                            <option value="화">화요일</option>
+                            <option value="수">수요일</option>
+                            <option value="목">목요일</option>
+                            <option value="금">금요일</option>
+                            <option value="토">토요일</option>
+                            <option value="일">일요일</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="startTime">시작 시간:</label>
+                        <input type="time" id="startTime" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="endTime">종료 시간:</label>
+                        <input type="time" id="endTime" required>
+                    </div>
+
+                    <button type="submit" class="btn-primary">스케줄 추가</button>
+                </form>
+            </div>
+
+            <div class="schedules-section">
+                <h2>스케줄 목록</h2>
+                <div id="schedulesContainer" class="schedules-container">
+                    <p class="empty-message">스케줄이 없습니다. 위에서 새 스케줄을 추가하세요.</p>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
