@@ -34,6 +34,24 @@ header h1 {
     text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.2);
 }
 
+.warning-box {
+    background: rgba(255, 255, 255, 0.2);
+    border: 2px solid rgba(255, 255, 255, 0.5);
+    border-radius: 10px;
+    padding: 15px 20px;
+    margin-bottom: 20px;
+    font-size: 0.95em;
+    line-height: 1.6;
+    text-align: center;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.warning-box strong {
+    font-size: 1.05em;
+    display: block;
+    margin-bottom: 5px;
+}
+
 .header-note {
     margin-top: 15px;
     font-size: 0.9em;
