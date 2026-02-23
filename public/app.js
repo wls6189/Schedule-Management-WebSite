@@ -1,226 +1,269 @@
-// 현재 호스트를 자동으로 감지하여 API URL 설정
-const API_URL = `${window.location.origin}/api`;
+// =========================
+// 로그인 (프론트 단 UI 표시용)
+// =========================
 
 let currentUser = null;
 
-// DOM 요소
 const usernameInput = document.getElementById('usernameInput');
 const loginBtn = document.getElementById('loginBtn');
 const currentUserDiv = document.getElementById('currentUser');
-const scheduleForm = document.getElementById('scheduleForm');
-const schedulesContainer = document.getElementById('schedulesContainer');
 
-// 로그인 처리
-loginBtn.addEventListener('click', async () => {
-    const username = usernameInput.value.trim();
-    
-    if (!username) {
-        alert('사용자 이름을 입력하세요.');
-        return;
-    }
+loginBtn.addEventListener('click', () => {
+  const username = usernameInput.value.trim();
+  if (!username) {
+    alert('사용자 이름을 입력하세요.');
+    return;
+  }
 
-    try {
-        const response = await fetch(`${API_URL}/users`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ username }),
-        });
-
-        if (response.ok) {
-            const user = await response.json();
-            currentUser = user;
-            currentUserDiv.textContent = `현재 사용자: ${user.username}`;
-            currentUserDiv.classList.add('active');
-            usernameInput.disabled = true;
-            loginBtn.disabled = true;
-            loadSchedules();
-        } else {
-            let errorMessage = '알 수 없는 오류가 발생했습니다.';
-            try {
-                const error = await response.json();
-                errorMessage = error.error || errorMessage;
-            } catch (e) {
-                errorMessage = `서버 오류 (${response.status}): ${response.statusText}`;
-            }
-            alert(`오류: ${errorMessage}`);
-        }
-    } catch (error) {
-        console.error('로그인 오류:', error);
-        let errorMsg = '로그인 중 오류가 발생했습니다.';
-        if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError')) {
-            errorMsg = '서버에 연결할 수 없습니다.\n\n잠시 후 다시 시도해주세요.\n(Render 무료 플랜의 경우 첫 접속 시 약 30초~1분 정도 소요될 수 있습니다)';
-        } else {
-            errorMsg = `오류: ${error.message}`;
-        }
-        alert(errorMsg);
-    }
+  currentUser = { username };
+  currentUserDiv.textContent = `현재 사용자: ${username}`;
+  currentUserDiv.classList.add('active');
+  usernameInput.disabled = true;
+  loginBtn.disabled = true;
 });
 
-// 스케줄 추가
-scheduleForm.addEventListener('submit', async (e) => {
-    e.preventDefault();
+// =========================
+// 고정 스케줄 / 출석 관리
+// =========================
 
-    if (!currentUser) {
-        alert('먼저 로그인하세요.');
-        return;
-    }
+const MEMBERS = ['김진', '김재민', '전예준'];
 
-    const dayOfWeek = document.getElementById('daySelect').value;
-    const startTime = document.getElementById('startTime').value;
-    const endTime = document.getElementById('endTime').value;
+const SESSIONS = [
+  { id: 'mon', day: '월', label: '월요일', time: '10:30 ~ 17:00' },
+  { id: 'wed', day: '수', label: '수요일', time: '10:30 ~ 17:00' },
+];
 
-    if (!dayOfWeek || !startTime || !endTime) {
-        alert('모든 필드를 입력하세요.');
-        return;
-    }
+const MAX_EXCUSED_PER_MEMBER = 2;
+const PENALTY_AMOUNT = 10000; // 지각 30분 이상 시 1만원
 
-    if (startTime >= endTime) {
-        alert('종료 시간은 시작 시간보다 늦어야 합니다.');
-        return;
-    }
+// attendanceRecords: [{ sessionId, sessionLabel, sessionTime, member, status, lateMinutes, isExcused, penalty }]
+let attendanceRecords = [];
+let excusedUsed = {}; // { member: count }
 
-    try {
-        const response = await fetch(`${API_URL}/schedules`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                userId: currentUser.id,
-                dayOfWeek,
-                startTime,
-                endTime,
-            }),
-        });
+const attendanceTableBody = document.getElementById('attendanceTableBody');
+const penaltyTableBody = document.getElementById('penaltyTableBody');
 
-        if (response.ok) {
-            scheduleForm.reset();
-            loadSchedules();
-        } else {
-            const error = await response.json();
-            alert(`오류: ${error.error}`);
-        }
-    } catch (error) {
-        console.error('스케줄 추가 오류:', error);
-        alert('스케줄 추가 중 오류가 발생했습니다.');
-    }
-});
+// 초기 상태 설정
+function initState() {
+  attendanceRecords = [];
+  excusedUsed = {};
 
-// 스케줄 목록 로드
-async function loadSchedules() {
-    try {
-        const response = await fetch(`${API_URL}/schedules`);
-        
-        if (response.ok) {
-            const schedules = await response.json();
-            displaySchedules(schedules);
-        } else {
-            console.error('스케줄 로드 오류:', response.status, response.statusText);
-        }
-    } catch (error) {
-        console.error('스케줄 로드 오류:', error);
-        // 서버 연결 오류는 조용히 처리 (서버가 아직 시작되지 않았을 수 있음)
-    }
+  MEMBERS.forEach((member) => {
+    excusedUsed[member] = 0;
+
+    SESSIONS.forEach((session) => {
+      attendanceRecords.push({
+        sessionId: session.id,
+        sessionLabel: session.label,
+        sessionTime: session.time,
+        member,
+        status: 'normal', // normal | late | absent | excused
+        lateMinutes: 0,
+        isExcused: false,
+        penalty: 0,
+      });
+    });
+  });
 }
 
-// 스케줄 표시
-function displaySchedules(schedules) {
-    if (schedules.length === 0) {
-        schedulesContainer.innerHTML = '<p class="empty-message">스케줄이 없습니다. 위에서 새 스케줄을 추가하세요.</p>';
-        return;
+// 출석 테이블 렌더링
+function renderAttendanceTable() {
+  attendanceTableBody.innerHTML = '';
+
+  attendanceRecords.forEach((rec, index) => {
+    const tr = document.createElement('tr');
+
+    // 요일
+    const dayTd = document.createElement('td');
+    dayTd.textContent = rec.sessionLabel;
+    tr.appendChild(dayTd);
+
+    // 시간
+    const timeTd = document.createElement('td');
+    timeTd.textContent = rec.sessionTime;
+    tr.appendChild(timeTd);
+
+    // 멤버
+    const memberTd = document.createElement('td');
+    memberTd.textContent = rec.member;
+    tr.appendChild(memberTd);
+
+    // 상태 선택
+    const statusTd = document.createElement('td');
+    const statusSelect = document.createElement('select');
+    statusSelect.className = 'status-select';
+
+    [
+      { value: 'normal', label: '정상' },
+      { value: 'late', label: '지각' },
+      { value: 'absent', label: '결석' },
+      { value: 'excused', label: '공결' },
+    ].forEach((opt) => {
+      const option = document.createElement('option');
+      option.value = opt.value;
+      option.textContent = opt.label;
+      if (rec.status === opt.value) option.selected = true;
+      statusSelect.appendChild(option);
+    });
+
+    statusSelect.addEventListener('change', () => {
+      handleStatusChange(index, statusSelect.value);
+    });
+
+    statusTd.appendChild(statusSelect);
+    tr.appendChild(statusTd);
+
+    // 지각 시간 입력
+    const lateTd = document.createElement('td');
+    const lateInput = document.createElement('input');
+    lateInput.type = 'number';
+    lateInput.min = '0';
+    lateInput.placeholder = '분';
+    lateInput.value = rec.lateMinutes || '';
+    lateInput.className = 'late-input';
+
+    if (rec.status !== 'late') {
+      lateInput.disabled = true;
     }
 
-    schedulesContainer.innerHTML = schedules.map(schedule => {
-        const isCompleted = schedule.attendance_status === 1;
-        const timeFormat = formatTime(schedule.start_time) + ' ~ ' + formatTime(schedule.end_time);
-        
-        return `
-            <div class="schedule-card">
-                <div class="schedule-info">
-                    <h3>
-                        <span class="day-badge">${schedule.day_of_week}</span>
-                        ${schedule.username}
-                    </h3>
-                    <p>⏰ ${timeFormat}</p>
-                </div>
-                <div class="schedule-actions">
-                    <label class="attendance-label ${isCompleted ? 'completed' : 'pending'}">
-                        <input 
-                            type="checkbox" 
-                            class="attendance-checkbox" 
-                            ${isCompleted ? 'checked' : ''}
-                            onchange="updateAttendance(${schedule.id}, this.checked)"
-                        >
-                        ${isCompleted ? '✅ 출석 완료' : '⏳ 출석 대기'}
-                    </label>
-                    ${currentUser && currentUser.id === schedule.user_id ? `
-                        <button class="delete-btn" onclick="deleteSchedule(${schedule.id})">삭제</button>
-                    ` : ''}
-                </div>
-            </div>
-        `;
-    }).join('');
+    lateInput.addEventListener('input', () => {
+      const value = parseInt(lateInput.value || '0', 10);
+      handleLateMinutesChange(index, value);
+    });
+
+    lateTd.appendChild(lateInput);
+    tr.appendChild(lateTd);
+
+    // 공결 정보
+    const excusedTd = document.createElement('td');
+    excusedTd.className = 'excused-cell';
+    const used = excusedUsed[rec.member] || 0;
+    const remaining = MAX_EXCUSED_PER_MEMBER - used;
+    excusedTd.textContent =
+      rec.status === 'excused'
+        ? `공결 사용 (${used}/${MAX_EXCUSED_PER_MEMBER})`
+        : `남은 공결: ${remaining}회`;
+    tr.appendChild(excusedTd);
+
+    // 벌칙금
+    const penaltyTd = document.createElement('td');
+    penaltyTd.textContent = rec.penalty > 0 ? `${rec.penalty.toLocaleString()}원` : '-';
+    penaltyTd.className = rec.penalty > 0 ? 'penalty-cell has-penalty' : 'penalty-cell';
+    tr.appendChild(penaltyTd);
+
+    attendanceTableBody.appendChild(tr);
+  });
 }
 
-// 시간 포맷팅 (HH:mm 형식)
-function formatTime(timeString) {
-    if (!timeString) return '';
-    const [hours, minutes] = timeString.split(':');
-    return `${hours.padStart(2, '0')}:${minutes || '00'}`;
-}
+// 상태 변경
+function handleStatusChange(index, newStatus) {
+  const rec = attendanceRecords[index];
 
-// 출석 상태 업데이트
-async function updateAttendance(scheduleId, attendanceStatus) {
-    try {
-        const response = await fetch(`${API_URL}/schedules/${scheduleId}/attendance`, {
-            method: 'PUT',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ attendanceStatus }),
-        });
-
-        if (response.ok) {
-            loadSchedules();
-        } else {
-            const error = await response.json();
-            alert(`오류: ${error.error}`);
-            loadSchedules(); // 상태 복원을 위해 다시 로드
-        }
-    } catch (error) {
-        console.error('출석 상태 업데이트 오류:', error);
-        alert('출석 상태 업데이트 중 오류가 발생했습니다.');
-        loadSchedules(); // 상태 복원을 위해 다시 로드
-    }
-}
-
-// 스케줄 삭제
-async function deleteSchedule(scheduleId) {
-    if (!confirm('이 스케줄을 삭제하시겠습니까?')) {
-        return;
+  if (newStatus === 'excused') {
+    const used = excusedUsed[rec.member] || 0;
+    // 새로 공결로 바꾸는 경우에만 체크
+    if (!rec.isExcused && used >= MAX_EXCUSED_PER_MEMBER) {
+      alert(`공결은 1인당 ${MAX_EXCUSED_PER_MEMBER}회까지입니다.`);
+      renderAttendanceTable();
+      renderPenaltyTable();
+      return;
     }
 
-    try {
-        const response = await fetch(`${API_URL}/schedules/${scheduleId}`, {
-            method: 'DELETE',
-        });
-
-        if (response.ok) {
-            loadSchedules();
-        } else {
-            const error = await response.json();
-            alert(`오류: ${error.error}`);
-        }
-    } catch (error) {
-        console.error('스케줄 삭제 오류:', error);
-        alert('스케줄 삭제 중 오류가 발생했습니다.');
+    if (!rec.isExcused) {
+      excusedUsed[rec.member] = used + 1;
     }
+    rec.isExcused = true;
+    rec.status = 'excused';
+    rec.lateMinutes = 0;
+    rec.penalty = 0;
+  } else {
+    // 공결 해제 시 횟수 감소
+    if (rec.isExcused) {
+      const used = excusedUsed[rec.member] || 0;
+      excusedUsed[rec.member] = Math.max(0, used - 1);
+      rec.isExcused = false;
+    }
+
+    rec.status = newStatus;
+
+    if (newStatus !== 'late') {
+      rec.lateMinutes = 0;
+      rec.penalty = 0;
+    } else {
+      // 지각 상태이면 현재 지각 시간 기준으로 벌칙금 계산
+      rec.penalty = rec.lateMinutes >= 30 ? PENALTY_AMOUNT : 0;
+    }
+  }
+
+  renderAttendanceTable();
+  renderPenaltyTable();
 }
 
-// 페이지 로드 시 스케줄 목록 로드
-loadSchedules();
+// 지각 시간 변경
+function handleLateMinutesChange(index, minutes) {
+  const rec = attendanceRecords[index];
+  rec.lateMinutes = minutes || 0;
 
-// 주기적으로 스케줄 목록 새로고침 (다른 사용자의 변경사항 반영)
-setInterval(loadSchedules, 5000); // 5초마다 새로고침
+  if (rec.status === 'late') {
+    // 30분 이상이면 무조건 1만원, 그 미만이면 0원
+    rec.penalty = rec.lateMinutes >= 30 ? PENALTY_AMOUNT : 0;
+  } else {
+    rec.penalty = 0;
+  }
+
+  renderAttendanceTable();
+  renderPenaltyTable();
+}
+
+// 벌칙금 리스트 렌더링
+function renderPenaltyTable() {
+  penaltyTableBody.innerHTML = '';
+
+  const penaltyRecords = attendanceRecords.filter((rec) => rec.penalty > 0);
+
+  if (penaltyRecords.length === 0) {
+    const tr = document.createElement('tr');
+    const td = document.createElement('td');
+    td.colSpan = 6;
+    td.textContent = '벌칙금 내역이 없습니다.';
+    td.className = 'empty-penalty';
+    tr.appendChild(td);
+    penaltyTableBody.appendChild(tr);
+    return;
+  }
+
+  penaltyRecords.forEach((rec, idx) => {
+    const tr = document.createElement('tr');
+
+    const idxTd = document.createElement('td');
+    idxTd.textContent = idx + 1;
+    tr.appendChild(idxTd);
+
+    const dayTd = document.createElement('td');
+    dayTd.textContent = rec.sessionLabel;
+    tr.appendChild(dayTd);
+
+    const timeTd = document.createElement('td');
+    timeTd.textContent = rec.sessionTime;
+    tr.appendChild(timeTd);
+
+    const memberTd = document.createElement('td');
+    memberTd.textContent = rec.member;
+    tr.appendChild(memberTd);
+
+    const reasonTd = document.createElement('td');
+    reasonTd.textContent = `지각 ${rec.lateMinutes}분`;
+    tr.appendChild(reasonTd);
+
+    const amountTd = document.createElement('td');
+    amountTd.textContent = `${rec.penalty.toLocaleString()}원`;
+    tr.appendChild(amountTd);
+
+    penaltyTableBody.appendChild(tr);
+  });
+}
+
+// 초기 실행
+initState();
+renderAttendanceTable();
+renderPenaltyTable();
