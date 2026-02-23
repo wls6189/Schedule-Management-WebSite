@@ -303,6 +303,28 @@ main {
     padding: 20px 0;
 }
 
+.subsection-title {
+    margin-top: 24px;
+    margin-bottom: 12px;
+    font-size: 1.1em;
+    font-weight: 600;
+    color: #374151;
+}
+
+.today-attendance {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+}
+
+.today-info {
+    font-size: 0.95em;
+    color: #4b5563;
+}
+
 @media (max-width: 768px) {
     body {
         padding: 12px;

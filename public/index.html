@@ -59,47 +59,32 @@
             <section class="attendance-section">
                 <h2>🕒 매주 실시간 작업 출석 관리</h2>
                 <p class="section-note">
-                    아래 표는 <strong>월 10:30~17:00</strong>,
-                    <strong>수 10:30~17:00</strong> 기준으로만 관리됩니다.
+                    월요일과 수요일 10:30~17:00 실시간 작업 기준으로 출석을 관리합니다.
+                    출석 버튼을 누르면 현재 시간을 기준으로 정상 / 지각 여부가 자동 계산됩니다.
                 </p>
+
+                <div class="today-attendance">
+                    <div id="todayInfo" class="today-info">
+                        오늘 출석 정보가 여기 표시됩니다.
+                    </div>
+                    <button id="checkInBtn" class="btn-primary">오늘 출석</button>
+                </div>
+
+                <h3 class="subsection-title">📒 출석부 (최근 4개월)</h3>
 
                 <table class="attendance-table">
                     <thead>
                         <tr>
+                            <th>날짜</th>
                             <th>요일</th>
                             <th>시간</th>
                             <th>멤버</th>
                             <th>상태</th>
                             <th>지각 시간(분)</th>
-                            <th>공결 정보</th>
                             <th>벌칙금</th>
                         </tr>
                     </thead>
                     <tbody id="attendanceTableBody">
-                        <!-- JS에서 동적으로 렌더링 -->
-                    </tbody>
-                </table>
-            </section>
-
-            <!-- 벌칙금 리스트 섹션 -->
-            <section class="penalty-section">
-                <h2>💰 벌칙금 리스트</h2>
-                <p class="section-note">
-                    30분 이상 지각한 기록만 아래에 나타납니다. (1회당 1만원)
-                </p>
-
-                <table class="penalty-table">
-                    <thead>
-                        <tr>
-                            <th>#</th>
-                            <th>요일</th>
-                            <th>시간</th>
-                            <th>멤버</th>
-                            <th>사유</th>
-                            <th>금액</th>
-                        </tr>
-                    </thead>
-                    <tbody id="penaltyTableBody">
                         <!-- JS에서 동적으로 렌더링 -->
                     </tbody>
                 </table>

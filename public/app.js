@@ -1,5 +1,11 @@
 // =========================
-// 로그인 (프론트 단 UI 표시용)
+// API 기본 설정
+// =========================
+
+const API_URL = `${window.location.origin}/api`;
+
+// =========================
+// 로그인 (허용된 멤버만)
 // =========================
 
 let currentUser = null;
@@ -8,22 +14,45 @@ const usernameInput = document.getElementById('usernameInput');
 const loginBtn = document.getElementById('loginBtn');
 const currentUserDiv = document.getElementById('currentUser');
 
-loginBtn.addEventListener('click', () => {
+loginBtn.addEventListener('click', async () => {
   const username = usernameInput.value.trim();
   if (!username) {
     alert('사용자 이름을 입력하세요.');
     return;
   }
 
-  currentUser = { username };
-  currentUserDiv.textContent = `현재 사용자: ${username}`;
-  currentUserDiv.classList.add('active');
-  usernameInput.disabled = true;
-  loginBtn.disabled = true;
+  try {
+    const response = await fetch(`${API_URL}/users`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ username }),
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      alert(error.error || '로그인 중 오류가 발생했습니다.');
+      return;
+    }
+
+    const user = await response.json();
+    currentUser = user;
+    currentUserDiv.textContent = `현재 사용자: ${user.username}`;
+    currentUserDiv.classList.add('active');
+    usernameInput.disabled = true;
+    loginBtn.disabled = true;
+
+    // 로그인 후 출석부 새로고침
+    loadAttendanceBook();
+  } catch (error) {
+    console.error('로그인 오류:', error);
+    alert('로그인 중 오류가 발생했습니다.');
+  }
 });
 
 // =========================
-// 고정 스케줄 / 출석 관리
+// 고정 스케줄 / 출석 관리 (서버 DB와 연동)
 // =========================
 
 const MEMBERS = ['김진', '김재민', '전예준'];
@@ -36,234 +65,152 @@ const SESSIONS = [
 const MAX_EXCUSED_PER_MEMBER = 2;
 const PENALTY_AMOUNT = 10000; // 지각 30분 이상 시 1만원
 
-// attendanceRecords: [{ sessionId, sessionLabel, sessionTime, member, status, lateMinutes, isExcused, penalty }]
-let attendanceRecords = [];
-let excusedUsed = {}; // { member: count }
-
 const attendanceTableBody = document.getElementById('attendanceTableBody');
-const penaltyTableBody = document.getElementById('penaltyTableBody');
+const todayInfoDiv = document.getElementById('todayInfo');
+const checkInBtn = document.getElementById('checkInBtn');
 
-// 초기 상태 설정
-function initState() {
-  attendanceRecords = [];
-  excusedUsed = {};
+// 오늘 정보 표시
+function updateTodayInfoPreview() {
+  const now = new Date();
+  const ko = new Date(now.getTime() + 9 * 60 * 60 * 1000);
 
-  MEMBERS.forEach((member) => {
-    excusedUsed[member] = 0;
+  const y = ko.getUTCFullYear();
+  const m = String(ko.getUTCMonth() + 1).padStart(2, '0');
+  const d = String(ko.getUTCDate()).padStart(2, '0');
+  const hh = String(ko.getUTCHours()).padStart(2, '0');
+  const mm = String(ko.getUTCMinutes()).padStart(2, '0');
 
-    SESSIONS.forEach((session) => {
-      attendanceRecords.push({
-        sessionId: session.id,
-        sessionLabel: session.label,
-        sessionTime: session.time,
-        member,
-        status: 'normal', // normal | late | absent | excused
-        lateMinutes: 0,
-        isExcused: false,
-        penalty: 0,
-      });
-    });
-  });
+  const dayNames = ['일', '월', '화', '수', '목', '금', '토'];
+  const dayIdx = ko.getUTCDay();
+  const dayName = dayNames[dayIdx];
+
+  let sessionText = '오늘은 매주 실시간 작업 요일(월/수)이 아닙니다.';
+  if (dayName === '월' || dayName === '수') {
+    sessionText = `${dayName}요일 10:30~17:00 세션`;
+  }
+
+  todayInfoDiv.textContent = `오늘 날짜: ${y}-${m}-${d} (${dayName}) / 현재 시간(서버 기준 추정): ${hh}:${mm} / ${sessionText}`;
 }
 
-// 출석 테이블 렌더링
-function renderAttendanceTable() {
-  attendanceTableBody.innerHTML = '';
-
-  attendanceRecords.forEach((rec, index) => {
-    const tr = document.createElement('tr');
-
-    // 요일
-    const dayTd = document.createElement('td');
-    dayTd.textContent = rec.sessionLabel;
-    tr.appendChild(dayTd);
-
-    // 시간
-    const timeTd = document.createElement('td');
-    timeTd.textContent = rec.sessionTime;
-    tr.appendChild(timeTd);
-
-    // 멤버
-    const memberTd = document.createElement('td');
-    memberTd.textContent = rec.member;
-    tr.appendChild(memberTd);
-
-    // 상태 선택
-    const statusTd = document.createElement('td');
-    const statusSelect = document.createElement('select');
-    statusSelect.className = 'status-select';
-
-    [
-      { value: 'normal', label: '정상' },
-      { value: 'late', label: '지각' },
-      { value: 'absent', label: '결석' },
-      { value: 'excused', label: '공결' },
-    ].forEach((opt) => {
-      const option = document.createElement('option');
-      option.value = opt.value;
-      option.textContent = opt.label;
-      if (rec.status === opt.value) option.selected = true;
-      statusSelect.appendChild(option);
-    });
-
-    statusSelect.addEventListener('change', () => {
-      handleStatusChange(index, statusSelect.value);
-    });
-
-    statusTd.appendChild(statusSelect);
-    tr.appendChild(statusTd);
-
-    // 지각 시간 입력
-    const lateTd = document.createElement('td');
-    const lateInput = document.createElement('input');
-    lateInput.type = 'number';
-    lateInput.min = '0';
-    lateInput.placeholder = '분';
-    lateInput.value = rec.lateMinutes || '';
-    lateInput.className = 'late-input';
-
-    if (rec.status !== 'late') {
-      lateInput.disabled = true;
+// 출석부 불러오기
+async function loadAttendanceBook() {
+  try {
+    const response = await fetch(`${API_URL}/attendance?months=4`);
+    if (!response.ok) {
+      console.error('출석부 로드 오류:', response.status, response.statusText);
+      return;
     }
 
-    lateInput.addEventListener('input', () => {
-      const value = parseInt(lateInput.value || '0', 10);
-      handleLateMinutesChange(index, value);
-    });
+    const records = await response.json();
+    renderAttendanceBook(records);
+  } catch (error) {
+    console.error('출석부 로드 오류:', error);
+  }
+}
 
-    lateTd.appendChild(lateInput);
+// 출석부 렌더링
+function renderAttendanceBook(records) {
+  attendanceTableBody.innerHTML = '';
+
+  if (!records || records.length === 0) {
+    const tr = document.createElement('tr');
+    const td = document.createElement('td');
+    td.colSpan = 7;
+    td.textContent = '출석 기록이 없습니다.';
+    td.className = 'empty-penalty';
+    tr.appendChild(td);
+    attendanceTableBody.appendChild(tr);
+    return;
+  }
+
+  const statusLabelMap = {
+    normal: '정상',
+    late: '지각',
+    absent: '결석',
+    excused: '공결',
+  };
+
+  records.forEach((rec) => {
+    const tr = document.createElement('tr');
+
+    const dateTd = document.createElement('td');
+    dateTd.textContent = rec.date;
+    tr.appendChild(dateTd);
+
+    const dayTd = document.createElement('td');
+    dayTd.textContent = rec.day_of_week;
+    tr.appendChild(dayTd);
+
+    const timeTd = document.createElement('td');
+    timeTd.textContent = rec.session_time;
+    tr.appendChild(timeTd);
+
+    const memberTd = document.createElement('td');
+    memberTd.textContent = rec.username;
+    tr.appendChild(memberTd);
+
+    const statusTd = document.createElement('td');
+    statusTd.textContent = statusLabelMap[rec.status] || rec.status;
+    tr.appendChild(statusTd);
+
+    const lateTd = document.createElement('td');
+    lateTd.textContent = rec.late_minutes || 0;
     tr.appendChild(lateTd);
 
-    // 공결 정보
-    const excusedTd = document.createElement('td');
-    excusedTd.className = 'excused-cell';
-    const used = excusedUsed[rec.member] || 0;
-    const remaining = MAX_EXCUSED_PER_MEMBER - used;
-    excusedTd.textContent =
-      rec.status === 'excused'
-        ? `공결 사용 (${used}/${MAX_EXCUSED_PER_MEMBER})`
-        : `남은 공결: ${remaining}회`;
-    tr.appendChild(excusedTd);
-
-    // 벌칙금
     const penaltyTd = document.createElement('td');
-    penaltyTd.textContent = rec.penalty > 0 ? `${rec.penalty.toLocaleString()}원` : '-';
-    penaltyTd.className = rec.penalty > 0 ? 'penalty-cell has-penalty' : 'penalty-cell';
+    penaltyTd.textContent =
+      rec.penalty_amount && rec.penalty_amount > 0
+        ? `${rec.penalty_amount.toLocaleString()}원`
+        : '-';
+    penaltyTd.className =
+      rec.penalty_amount && rec.penalty_amount > 0
+        ? 'penalty-cell has-penalty'
+        : 'penalty-cell';
     tr.appendChild(penaltyTd);
 
     attendanceTableBody.appendChild(tr);
   });
 }
 
-// 상태 변경
-function handleStatusChange(index, newStatus) {
-  const rec = attendanceRecords[index];
-
-  if (newStatus === 'excused') {
-    const used = excusedUsed[rec.member] || 0;
-    // 새로 공결로 바꾸는 경우에만 체크
-    if (!rec.isExcused && used >= MAX_EXCUSED_PER_MEMBER) {
-      alert(`공결은 1인당 ${MAX_EXCUSED_PER_MEMBER}회까지입니다.`);
-      renderAttendanceTable();
-      renderPenaltyTable();
-      return;
-    }
-
-    if (!rec.isExcused) {
-      excusedUsed[rec.member] = used + 1;
-    }
-    rec.isExcused = true;
-    rec.status = 'excused';
-    rec.lateMinutes = 0;
-    rec.penalty = 0;
-  } else {
-    // 공결 해제 시 횟수 감소
-    if (rec.isExcused) {
-      const used = excusedUsed[rec.member] || 0;
-      excusedUsed[rec.member] = Math.max(0, used - 1);
-      rec.isExcused = false;
-    }
-
-    rec.status = newStatus;
-
-    if (newStatus !== 'late') {
-      rec.lateMinutes = 0;
-      rec.penalty = 0;
-    } else {
-      // 지각 상태이면 현재 지각 시간 기준으로 벌칙금 계산
-      rec.penalty = rec.lateMinutes >= 30 ? PENALTY_AMOUNT : 0;
-    }
-  }
-
-  renderAttendanceTable();
-  renderPenaltyTable();
-}
-
-// 지각 시간 변경
-function handleLateMinutesChange(index, minutes) {
-  const rec = attendanceRecords[index];
-  rec.lateMinutes = minutes || 0;
-
-  if (rec.status === 'late') {
-    // 30분 이상이면 무조건 1만원, 그 미만이면 0원
-    rec.penalty = rec.lateMinutes >= 30 ? PENALTY_AMOUNT : 0;
-  } else {
-    rec.penalty = 0;
-  }
-
-  renderAttendanceTable();
-  renderPenaltyTable();
-}
-
-// 벌칙금 리스트 렌더링
-function renderPenaltyTable() {
-  penaltyTableBody.innerHTML = '';
-
-  const penaltyRecords = attendanceRecords.filter((rec) => rec.penalty > 0);
-
-  if (penaltyRecords.length === 0) {
-    const tr = document.createElement('tr');
-    const td = document.createElement('td');
-    td.colSpan = 6;
-    td.textContent = '벌칙금 내역이 없습니다.';
-    td.className = 'empty-penalty';
-    tr.appendChild(td);
-    penaltyTableBody.appendChild(tr);
+// 오늘 출석 버튼
+checkInBtn.addEventListener('click', async () => {
+  if (!currentUser) {
+    alert('먼저 로그인하세요. (김진, 김재민, 전예준만 로그인 가능합니다)');
     return;
   }
 
-  penaltyRecords.forEach((rec, idx) => {
-    const tr = document.createElement('tr');
+  try {
+    const response = await fetch(`${API_URL}/attendance/check-in`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ userId: currentUser.id }),
+    });
 
-    const idxTd = document.createElement('td');
-    idxTd.textContent = idx + 1;
-    tr.appendChild(idxTd);
+    const data = await response.json().catch(() => ({}));
 
-    const dayTd = document.createElement('td');
-    dayTd.textContent = rec.sessionLabel;
-    tr.appendChild(dayTd);
+    if (!response.ok) {
+      alert(data.error || '출석 처리 중 오류가 발생했습니다.');
+      return;
+    }
 
-    const timeTd = document.createElement('td');
-    timeTd.textContent = rec.sessionTime;
-    tr.appendChild(timeTd);
+    if (data.status === 'late') {
+      alert(
+        `${data.username}님, 지각 ${data.lateMinutes}분으로 출석 처리되었습니다.\n벌칙금: ${data.penaltyAmount.toLocaleString()}원`
+      );
+    } else {
+      alert(`${data.username}님, 정상 출석 처리되었습니다.`);
+    }
 
-    const memberTd = document.createElement('td');
-    memberTd.textContent = rec.member;
-    tr.appendChild(memberTd);
-
-    const reasonTd = document.createElement('td');
-    reasonTd.textContent = `지각 ${rec.lateMinutes}분`;
-    tr.appendChild(reasonTd);
-
-    const amountTd = document.createElement('td');
-    amountTd.textContent = `${rec.penalty.toLocaleString()}원`;
-    tr.appendChild(amountTd);
-
-    penaltyTableBody.appendChild(tr);
-  });
-}
+    updateTodayInfoPreview();
+    loadAttendanceBook();
+  } catch (error) {
+    console.error('출석 처리 오류:', error);
+    alert('출석 처리 중 오류가 발생했습니다.');
+  }
+});
 
 // 초기 실행
-initState();
-renderAttendanceTable();
-renderPenaltyTable();
+updateTodayInfoPreview();
+loadAttendanceBook();
