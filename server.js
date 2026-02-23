@@ -70,13 +70,14 @@ app.post('/api/users', (req, res) => {
     return res.status(400).json({ error: '사용자 이름이 필요합니다.' });
   }
 
-  // 허용된 멤버만 로그인 가능
+  // 공백 제거한 이름 기준으로 허용된 멤버만 로그인 가능
+  const normalizedUsername = String(username).replace(/\s+/g, '');
   const allowedUsers = ['김진', '김재민', '전예준'];
-  if (!allowedUsers.includes(username)) {
+  if (!allowedUsers.includes(normalizedUsername)) {
     return res.status(400).json({ error: '허용된 멤버(김진, 김재민, 전예준)만 로그인할 수 있습니다.' });
   }
 
-  db.get('SELECT * FROM users WHERE username = ?', [username], (err, user) => {
+  db.get('SELECT * FROM users WHERE username = ?', [normalizedUsername], (err, user) => {
     if (err) {
       return res.status(500).json({ error: err.message });
     }
@@ -86,11 +87,11 @@ app.post('/api/users', (req, res) => {
     }
 
     // 새 사용자 생성
-    db.run('INSERT INTO users (username) VALUES (?)', [username], function(err) {
+    db.run('INSERT INTO users (username) VALUES (?)', [normalizedUsername], function(err) {
       if (err) {
         return res.status(500).json({ error: err.message });
       }
-      res.json({ id: this.lastID, username });
+      res.json({ id: this.lastID, username: normalizedUsername });
     });
   });
 });
